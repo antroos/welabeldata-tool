@@ -11,6 +11,9 @@ const openai = new OpenAI({
   apiKey: apiKey,
 });
 
+// Список поддерживаемых моделей
+const supportedModels = ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo'];
+
 export async function POST(req: Request) {
   try {
     const { messages, model } = await req.json();
@@ -36,23 +39,56 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log(`Making OpenAI API call to model: ${model} with ${messages.length} messages`);
-    
-    const response = await openai.chat.completions.create({
-      model: model,
-      messages: messages,
-    });
-
-    if (!response.choices || response.choices.length === 0) {
-      return NextResponse.json(
-        { error: 'No response choices returned from OpenAI API' },
-        { status: 500 }
-      );
+    // Проверяем, поддерживается ли модель
+    if (!supportedModels.includes(model)) {
+      console.warn(`Warning: Model ${model} may not be supported. Continuing anyway.`);
     }
 
-    return NextResponse.json(response.choices[0].message);
+    console.log(`Making OpenAI API call to model: ${model} with ${messages.length} messages`);
+    
+    try {
+      const response = await openai.chat.completions.create({
+        model: model,
+        messages: messages,
+      });
+
+      if (!response.choices || response.choices.length === 0) {
+        return NextResponse.json(
+          { error: 'No response choices returned from OpenAI API' },
+          { status: 500 }
+        );
+      }
+
+      // Возвращаем сообщение вместе с информацией о модели
+      return NextResponse.json({
+        ...response.choices[0].message,
+        model: response.model // Добавляем информацию о модели, которая фактически использовалась
+      });
+    } catch (openaiError: any) {
+      // Обработка ошибок API OpenAI
+      console.error('OpenAI API Error details:', openaiError);
+      
+      // Извлекаем детали ошибки из объекта ошибки OpenAI
+      const statusCode = openaiError.status || 500;
+      const errorMessage = openaiError.message || 'Unknown OpenAI API error';
+      let errorDetails = 'No additional details';
+      
+      if (openaiError.error) {
+        errorDetails = openaiError.error.message || JSON.stringify(openaiError.error);
+      }
+      
+      return NextResponse.json(
+        {
+          error: 'OpenAI API Error',
+          details: errorMessage,
+          additionalInfo: errorDetails,
+          code: openaiError.code || 'unknown_error'
+        },
+        { status: statusCode }
+      );
+    }
   } catch (error) {
-    console.error('OpenAI API Error:', error);
+    console.error('API request error:', error);
     
     // Извлекаем подробности ошибки
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';

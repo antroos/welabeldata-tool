@@ -9,7 +9,7 @@ interface OpenAIModel {
 }
 
 // Проверяем наличие API ключа
-const apiKey = process.env.OPENAI_API_KEY;
+const apiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY;
 if (!apiKey) {
   throw new Error('OPENAI_API_KEY is not set in environment variables');
 }
@@ -28,10 +28,12 @@ export async function GET() {
 
     // Фильтруем только модели, которые поддерживают чат
     const chatModels = response.data.filter((model: OpenAIModel) => {
-      const isGPT = model.id.includes('gpt');
+      // Распространенные модели чата
+      const isChatModel = model.id.includes('gpt');
+      // Исключаем инструктивные модели и старые версии
       const notInstruct = !model.id.includes('instruct');
       const notLegacy = !model.id.includes('-0');
-      return isGPT && notInstruct && notLegacy;
+      return isChatModel && notInstruct && notLegacy;
     });
     
     // Сортируем модели по ID
