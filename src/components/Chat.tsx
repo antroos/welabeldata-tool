@@ -9,7 +9,7 @@ type Model = {
   provider: 'openai';
 };
 
-// Обновленный список актуальных моделей
+// Updated list of current models
 const openaiModels: Model[] = [
   { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
   { id: 'gpt-4', name: 'GPT-4', provider: 'openai' },
@@ -33,18 +33,19 @@ export default function Chat() {
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // Автоскролл к последнему сообщению
+  // Auto scroll to the last message
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // При изменении сообщений скроллим вниз
+  // Scroll down when messages change
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  // Автоматическое изменение высоты поля ввода
+  // Automatically adjust textarea height
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -52,14 +53,14 @@ export default function Chat() {
     }
   }, [input]);
 
-  // При первой загрузке выполняем запрос к API для получения информации о моделях
+  // Fetch model information when the component first loads
   useEffect(() => {
     const fetchModelInfo = async () => {
       try {
         const response = await fetch('/api/models');
         if (response.ok) {
           const data = await response.json();
-          // Сохраняем доступные модели
+          // Save available models
           setAvailableModels(data);
           console.log('Available models:', data);
         } else {
@@ -75,7 +76,15 @@ export default function Chat() {
     fetchModelInfo();
   }, []);
 
-  // Обработка отправки сообщения с поддержкой потоковой передачи данных
+  // Start a new chat
+  const handleNewChat = () => {
+    setMessages([]);
+    setInput('');
+    setModelInfo(null);
+    setErrorMessage(null);
+  };
+
+  // Process form submission with streaming data support
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
@@ -89,7 +98,7 @@ export default function Chat() {
     setErrorMessage(null);
 
     try {
-      // Добавляем временное сообщение помощника для отображения потоковой генерации текста
+      // Add temporary assistant message for streaming text generation
       const tempAssistantMessage: Message = { 
         role: 'assistant', 
         content: '', 
@@ -100,7 +109,7 @@ export default function Chat() {
       
       console.log(`Sending request with model: ${selectedModel.id}`);
       
-      // Используем потоковую передачу данных
+      // Use streaming data
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -109,23 +118,23 @@ export default function Chat() {
         body: JSON.stringify({
           messages: newMessages.map(msg => ({ role: msg.role, content: msg.content })),
           model: selectedModel.id,
-          stream: true, // Включаем потоковую передачу
+          stream: true, // Enable streaming
         }),
       });
 
       if (!response.ok) {
-        // Обработка ошибок HTTP
+        // Handle HTTP errors
         let errorDetails = 'Network response was not ok: ' + response.status;
         try {
           const errorData = await response.json();
           errorDetails = errorData.details || errorData.error || errorDetails;
         } catch (e) {
-          // Если не удалось распарсить JSON
+          // Failed to parse JSON
         }
         throw new Error(errorDetails);
       }
 
-      // Создаем объект чтения для получения потоковых данных
+      // Create reader for streaming data
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullContent = '';
@@ -144,13 +153,13 @@ export default function Chat() {
               try {
                 const data = JSON.parse(line);
 
-                // Обработка разных типов сообщений
+                // Process different message types
                 if (data.type === 'chunk') {
                   fullContent += data.content;
 
                   setMessages(prevMessages => {
                     const updatedMessages = [...prevMessages];
-                    // Обновляем контент сообщения ассистента в реальном времени
+                    // Update assistant message content in real time
                     const lastMessageIndex = updatedMessages.length - 1;
                     if (lastMessageIndex >= 0 && updatedMessages[lastMessageIndex].role === 'assistant') {
                       updatedMessages[lastMessageIndex].content = fullContent;
@@ -162,7 +171,7 @@ export default function Chat() {
                     responseModel = data.model;
                   }
                 } else if (data.type === 'end') {
-                  // Финальный контент и информация о модели
+                  // Final content and model information
                   if (data.model) {
                     responseModel = data.model;
                     setModelInfo(`Response generated by: ${responseModel}`);
@@ -180,7 +189,7 @@ export default function Chat() {
         }
       }
 
-      // Завершаем потоковую передачу, устанавливаем окончательные данные
+      // Complete streaming, set final data
       setMessages(prevMessages => {
         const updatedMessages = [...prevMessages];
         const lastMessageIndex = updatedMessages.length - 1;
@@ -195,7 +204,7 @@ export default function Chat() {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error occurred';
       setErrorMessage(errorMsg);
       
-      // Если был ответ потоком, удаляем временное сообщение и добавляем сообщение с ошибкой
+      // If there was a streaming response, remove temporary message and add error message
       setMessages(prevMessages => {
         const lastMessage = prevMessages[prevMessages.length - 1];
         const withoutTemp = lastMessage.isStreaming ? prevMessages.slice(0, -1) : prevMessages;
@@ -210,7 +219,7 @@ export default function Chat() {
     }
   };
 
-  // Обработка нажатия Enter для отправки, Shift+Enter для новой строки
+  // Handle Enter key press for sending, Shift+Enter for new line
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -219,72 +228,144 @@ export default function Chat() {
   };
 
   return (
-    <div className="container mx-auto max-w-5xl p-4 bg-gray-50 min-h-screen">
-      <div className="flex flex-col h-screen bg-white rounded-xl shadow-lg overflow-hidden">
-        {/* Header with model selector */}
-        <div className="bg-gradient-to-r from-indigo-600 to-blue-500 p-4 text-white">
-          <h1 className="text-xl font-bold mb-2">Чат с AI Ассистентом</h1>
-          <div className="flex items-center gap-2">
-            <label htmlFor="model-select" className="text-white">Модель:</label>
-            <select
-              id="model-select"
-              value={selectedModel.id}
-              onChange={(e) => {
-                const model = openaiModels.find(m => m.id === e.target.value);
-                if (model) setSelectedModel(model);
-              }}
-              className="p-2 rounded-lg bg-white/20 text-white border border-white/30 focus:outline-none focus:ring-2 focus:ring-white/70"
-            >
-              {openaiModels.map((model) => (
-                <option key={model.id} value={model.id} className="text-gray-800">
-                  {model.name}
-                </option>
-              ))}
-            </select>
-          </div>
+    <div className="chatgpt-container">
+      {/* Sidebar */}
+      <div className="sidebar" style={{ width: isSidebarOpen ? '260px' : '0', overflow: 'hidden', transition: 'width 0.3s' }}>
+        <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+          <button 
+            onClick={handleNewChat}
+            style={{ 
+              width: '100%', 
+              padding: '10px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              backgroundColor: 'rgba(255,255,255,0.1)', 
+              border: 'none', 
+              borderRadius: '6px', 
+              color: 'white', 
+              cursor: 'pointer' 
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginRight: '8px' }}>
+              <path d="M12 4V20M4 12H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <span>New chat</span>
+          </button>
+        </div>
+        
+        <div style={{ flex: 1, padding: '16px', overflowY: 'auto' }}>
+          {/* Conversation history would go here */}
+        </div>
+        
+        <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px', marginBottom: '8px' }}>Select model:</div>
+          <select
+            value={selectedModel.id}
+            onChange={(e) => {
+              const model = openaiModels.find(m => m.id === e.target.value);
+              if (model) setSelectedModel(model);
+            }}
+            style={{ 
+              width: '100%', 
+              padding: '8px', 
+              backgroundColor: '#343541', 
+              color: 'white', 
+              border: '1px solid rgba(255,255,255,0.2)', 
+              borderRadius: '6px' 
+            }}
+          >
+            {openaiModels.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
+            ))}
+          </select>
+          
           {modelInfo && (
-            <div className="text-sm text-white/80 mt-1">{modelInfo}</div>
-          )}
-          {errorMessage && (
-            <div className="text-sm bg-red-500/20 border border-red-500/30 text-white p-2 rounded mt-2 max-w-md">
-              <span className="font-semibold">Error:</span> {errorMessage}
-            </div>
+            <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', marginTop: '8px' }}>{modelInfo}</div>
           )}
         </div>
+      </div>
+      
+      {/* Mobile sidebar toggle button */}
+      <button 
+        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+        style={{ 
+          position: 'fixed', 
+          left: 0, 
+          top: '16px', 
+          backgroundColor: '#202123', 
+          padding: '8px', 
+          borderRadius: '0 6px 6px 0', 
+          zIndex: 10, 
+          color: 'white', 
+          border: 'none', 
+          cursor: 'pointer', 
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
+        {isSidebarOpen ? (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M11 19L4 12L11 5M20 19L13 12L20 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        ) : (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M13 5L20 12L13 19M4 5L11 12L4 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </button>
 
-        {/* Chat messages */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50">
+      {/* Main chat area */}
+      <div className="chat-content">
+        {/* Messages */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 0' }}>
           {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <div className="text-6xl mb-4">💬</div>
-              <p className="text-lg">Начните разговор с AI ассистентом</p>
-              <p className="text-sm mt-2">Ваши сообщения и ответы будут отображаться здесь</p>
+            <div style={{ 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              height: '100%', 
+              color: 'rgba(255,255,255,0.6)',
+              padding: '0 16px',
+              textAlign: 'center'
+            }}>
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: '16px', opacity: 0.3 }}>
+                <path d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <h2 style={{ fontSize: '24px', fontWeight: 500, marginBottom: '8px', color: 'rgba(255,255,255,0.9)' }}>How can I help you today?</h2>
+              <p style={{ maxWidth: '400px' }}>
+                Start a conversation with the AI assistant. Your chat messages will appear here.
+              </p>
             </div>
           )}
           
           {messages.map((message, index) => (
-            <div
-              key={index}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`flex max-w-3xl ${message.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  message.role === 'user' ? 'bg-blue-100 text-blue-600 ml-3' : 'bg-indigo-100 text-indigo-600 mr-3'
-                }`}>
-                  {message.role === 'user' ? '👤' : '🤖'}
+            <div key={index} className={message.role === 'assistant' ? 'assistant-message' : 'user-message'}>
+              <div className="message-container">
+                <div className={message.role === 'user' ? 'user-icon' : 'bot-icon'}>
+                  {message.role === 'user' ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
                 </div>
-                <div className={`p-4 rounded-2xl shadow-sm ${
-                  message.role === 'user' 
-                    ? 'bg-blue-500 text-white rounded-tr-none' 
-                    : 'bg-white text-gray-800 rounded-tl-none border border-gray-200'
-                }`}>
+                <div style={{ color: 'white', lineHeight: 1.6 }}>
                   {message.isStreaming ? (
                     <div>
                       {message.content}
-                      <span className="inline-block animate-pulse">▋</span>
+                      <div className="typing-animation"></div>
                     </div>
                   ) : (
-                    <div className="whitespace-pre-wrap">{message.content}</div>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {message.content}
+                    </div>
                   )}
                 </div>
               </div>
@@ -292,52 +373,79 @@ export default function Chat() {
           ))}
           
           {isLoading && !messages[messages.length - 1]?.isStreaming && (
-            <div className="flex justify-start">
-              <div className="flex max-w-3xl">
-                <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 bg-indigo-100 text-indigo-600 mr-3">
-                  🤖
+            <div className="assistant-message">
+              <div className="message-container">
+                <div className="bot-icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </div>
-                <div className="p-4 rounded-2xl rounded-tl-none shadow-sm bg-white border border-gray-200">
-                  <div className="flex space-x-2">
-                    <div className="w-3 h-3 bg-gray-400 rounded-full animate-bounce"></div>
-                    <div className="w-3 h-3 bg-gray-400 rounded-full animate-bounce delay-100"></div>
-                    <div className="w-3 h-3 bg-gray-400 rounded-full animate-bounce delay-200"></div>
-                  </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.6)', animation: 'bounce 1s infinite' }}></div>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.6)', animation: 'bounce 1s infinite', animationDelay: '0.1s' }}></div>
+                  <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.6)', animation: 'bounce 1s infinite', animationDelay: '0.2s' }}></div>
                 </div>
               </div>
             </div>
           )}
           
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef}></div>
         </div>
 
         {/* Input form */}
-        <div className="p-4 border-t border-gray-200 bg-white">
-          <form onSubmit={handleSubmit} className="flex items-end gap-2">
-            <div className="flex-1 relative">
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Введите сообщение..."
-                rows={1}
-                className="w-full p-3 pr-12 border rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none max-h-32 overflow-y-auto"
-              />
-              <div className="absolute right-3 bottom-3 text-xs text-gray-400">
-                {isLoading ? '' : 'Нажмите Enter для отправки'}
-              </div>
+        <div style={{ padding: '16px', position: 'relative', backgroundColor: '#40414F', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+          {errorMessage && (
+            <div style={{ 
+              position: 'absolute', 
+              bottom: '80px', 
+              left: '50%', 
+              transform: 'translateX(-50%)', 
+              backgroundColor: 'rgba(239, 68, 68, 0.9)', 
+              color: 'white', 
+              padding: '12px 16px', 
+              borderRadius: '6px', 
+              maxWidth: '400px', 
+              fontSize: '14px',
+              boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
+            }}>
+              <span style={{ fontWeight: 500 }}>Error:</span> {errorMessage}
             </div>
+          )}
+          
+          <form onSubmit={handleSubmit} style={{ maxWidth: '800px', margin: '0 auto', position: 'relative' }}>
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Message ChatGPT..."
+              className="input-box"
+            />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="p-3 rounded-xl bg-blue-500 text-white hover:bg-blue-600 
-                        disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors"
+              style={{ 
+                position: 'absolute', 
+                right: '12px', 
+                bottom: '12px', 
+                backgroundColor: 'transparent', 
+                border: 'none', 
+                color: isLoading || !input.trim() ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.7)', 
+                cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '8px'
+              }}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M13 5L20 12L13 19M5 5L12 12L5 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </button>
+            
+            <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginTop: '8px' }}>
+              {isLoading ? 'Processing...' : 'Press Enter to send, Shift+Enter for new line'}
+            </div>
           </form>
         </div>
       </div>
