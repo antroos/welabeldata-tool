@@ -14,10 +14,92 @@ const openai = new OpenAI({
 // Список поддерживаемых моделей
 const supportedModels = ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo'];
 
+// Максимальный размер изображения в байтах (10 МБ)
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+// Поддерживаемые типы изображений
+const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
 export async function POST(req: Request) {
   try {
-    const { messages, model, stream = false } = await req.json();
+    // Проверяем тип запроса
+    const contentType = req.headers.get('content-type') || '';
     
+    let messages: any[] = [];
+    let model: string = '';
+    let stream: boolean = false;
+    let imageData: string | null = null;
+    let hasSystemMessage: boolean = false;
+    
+    // Обработка FormData (для запросов с изображениями)
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await req.formData();
+      
+      // Извлекаем текстовые данные
+      model = formData.get('model') as string;
+      stream = formData.get('stream') === 'true';
+      
+      // Получаем сообщения
+      const messagesJson = formData.get('messages');
+      if (messagesJson && typeof messagesJson === 'string') {
+        messages = JSON.parse(messagesJson);
+        
+        // Проверяем, есть ли системное сообщение
+        hasSystemMessage = messages.some(msg => msg.role === 'system');
+      }
+      
+      // Получаем изображение, если оно есть
+      const imageFile = formData.get('image') as File | null;
+      
+      if (imageFile) {
+        // Проверяем тип файла
+        if (!SUPPORTED_IMAGE_TYPES.includes(imageFile.type)) {
+          return NextResponse.json(
+            { error: 'Unsupported image type. Supported types: JPEG, PNG, WebP, GIF' },
+            { status: 400 }
+          );
+        }
+        
+        // Проверяем размер файла
+        if (imageFile.size > MAX_IMAGE_SIZE) {
+          return NextResponse.json(
+            { error: 'Image size exceeds the maximum allowed (10MB)' },
+            { status: 400 }
+          );
+        }
+        
+        // Конвертируем в base64
+        const imageBuffer = await imageFile.arrayBuffer();
+        const imageBase64 = Buffer.from(imageBuffer).toString('base64');
+        const mime = imageFile.type;
+        imageData = `data:${mime};base64,${imageBase64}`;
+        
+        // Добавляем изображение в последнее сообщение пользователя, если оно есть
+        if (messages && messages.length > 0) {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage.role === 'user') {
+            // Используем формат содержимого с изображением для GPT-4 Vision API
+            lastMessage.content = [
+              { type: 'text', text: lastMessage.content },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: imageData,
+                  detail: 'auto'  // low, high, auto
+                }
+              }
+            ];
+          }
+        }
+      }
+    } else {
+      // Обработка обычного JSON запроса
+      const jsonData = await req.json();
+      messages = jsonData.messages || [];
+      model = jsonData.model || '';
+      stream = jsonData.stream || false;
+    }
+    
+    // Дальнейшие проверки данных
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
         { error: 'Messages array is required and cannot be empty' },
@@ -110,6 +192,12 @@ export async function POST(req: Request) {
       const response = await openai.chat.completions.create({
         model: model,
         messages: messages,
+        // При использовании изображений с gpt-4o, рекомендуется использовать max_tokens
+        ...(model === 'gpt-4o' && messages.some(msg => 
+          typeof msg.content === 'object' && 
+          Array.isArray(msg.content) && 
+          msg.content.some(item => item.type === 'image_url')
+        ) ? { max_tokens: 4000 } : {})
       });
 
       if (!response.choices || response.choices.length === 0) {

@@ -21,6 +21,7 @@ type Message = {
   role: 'user' | 'assistant' | 'system';
   content: string;
   isStreaming?: boolean;
+  image?: string; // Base64 encoded image
 };
 
 export default function Chat() {
@@ -34,6 +35,9 @@ export default function Chat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto scroll to the last message
   const scrollToBottom = () => {
@@ -82,20 +86,72 @@ export default function Chat() {
     setInput('');
     setModelInfo(null);
     setErrorMessage(null);
+    setSelectedImage(null);
+    setImagePreview(null);
+  };
+
+  // Handle image selection
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('Only image files are supported');
+      return;
+    }
+
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('Image size exceeds the maximum allowed (10MB)');
+      return;
+    }
+
+    setSelectedImage(file);
+    
+    // Create preview
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Remove selected image
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   // Process form submission with streaming data support
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() && !selectedImage) return;
 
-    const userMessage: Message = { role: 'user', content: input };
+    // Create user message object
+    const userMessage: Message = { 
+      role: 'user', 
+      content: input,
+      image: imagePreview || undefined
+    };
+    
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
     setIsLoading(true);
     setModelInfo(null);
     setErrorMessage(null);
+
+    // Clear image immediately after creating the message
+    const tempImageRef = selectedImage;
+    setSelectedImage(null);
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
 
     try {
       // Add temporary assistant message for streaming text generation
@@ -109,18 +165,55 @@ export default function Chat() {
       
       console.log(`Sending request with model: ${selectedModel.id}`);
       
-      // Use streaming data
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: newMessages.map(msg => ({ role: msg.role, content: msg.content })),
-          model: selectedModel.id,
-          stream: true, // Enable streaming
-        }),
-      });
+      let response;
+      
+      // If we have an image, use FormData to send the request
+      if (tempImageRef) {
+        const formData = new FormData();
+        formData.append('model', selectedModel.id);
+        formData.append('stream', 'true');
+        
+        // Add system message for image analysis if needed
+        const messagesWithSystemPrompt = [...newMessages];
+        
+        // If there is no specific instruction in the user's message, add a system message for image analysis
+        if (!input.trim() || (input.toLowerCase().includes('анализ') || input.toLowerCase().includes('что на картинке') || input.toLowerCase().includes('что ты видишь'))) {
+          messagesWithSystemPrompt.unshift({
+            role: 'system',
+            content: 'Ты эксперт по визуальному анализу пользовательских интерфейсов. Проанализируй загруженное изображение и выполни следующие задачи:\n\n' +
+                    '1. Детально перечисли все элементы пользовательского интерфейса, которые видны на изображении (меню, кнопки, иконки, окна, панели и т.д.).\n' +
+                    '2. Для каждого компонента укажи его наименование, если оно видно (например: "Finder", "App Store", "System Preferences" и т.д.).\n' +
+                    '3. Опиши структуру интерфейса и как элементы относятся друг к другу.\n' +
+                    '4. Укажи примерный тип операционной системы и интерфейса, если определяется.\n\n' +
+                    'Формат ответа должен быть структурированным и содержать разделы: "Основные компоненты интерфейса", "Видимые приложения/иконки", "Структура интерфейса", "Общее заключение".'
+          });
+        }
+        
+        formData.append('messages', JSON.stringify(messagesWithSystemPrompt.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        }))));
+        
+        formData.append('image', tempImageRef);
+        
+        response = await fetch('/api/chat', {
+          method: 'POST',
+          body: formData,
+        });
+      } else {
+        // Regular JSON request without image
+        response = await fetch('/api/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: newMessages.map(msg => ({ role: msg.role, content: msg.content })),
+            model: selectedModel.id,
+            stream: true, // Enable streaming
+          }),
+        });
+      }
 
       if (!response.ok) {
         // Handle HTTP errors
@@ -337,7 +430,7 @@ export default function Chat() {
               </svg>
               <h2 style={{ fontSize: '24px', fontWeight: 500, marginBottom: '8px', color: 'rgba(255,255,255,0.9)' }}>How can I help you today?</h2>
               <p style={{ maxWidth: '400px' }}>
-                Start a conversation with the AI assistant. Your chat messages will appear here.
+                Start a conversation with the AI assistant. You can also upload images for analysis.
               </p>
             </div>
           )}
@@ -357,6 +450,22 @@ export default function Chat() {
                   )}
                 </div>
                 <div style={{ color: 'white', lineHeight: 1.6 }}>
+                  {/* Show image if present */}
+                  {message.image && message.role === 'user' && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <img 
+                        src={message.image} 
+                        alt="Uploaded image" 
+                        style={{ 
+                          maxWidth: '100%', 
+                          maxHeight: '300px', 
+                          borderRadius: '6px',
+                          border: '1px solid rgba(255,255,255,0.1)'
+                        }} 
+                      />
+                    </div>
+                  )}
+                  
                   {message.isStreaming ? (
                     <div>
                       {message.content}
@@ -412,36 +521,124 @@ export default function Chat() {
             </div>
           )}
           
-          <form onSubmit={handleSubmit} style={{ maxWidth: '800px', margin: '0 auto', position: 'relative' }}>
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Message ChatGPT..."
-              className="input-box"
-            />
-            <button
-              type="submit"
-              disabled={isLoading || !input.trim()}
-              style={{ 
-                position: 'absolute', 
-                right: '12px', 
-                bottom: '12px', 
-                backgroundColor: 'transparent', 
-                border: 'none', 
-                color: isLoading || !input.trim() ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.7)', 
-                cursor: isLoading || !input.trim() ? 'not-allowed' : 'pointer',
+          {/* Image preview */}
+          {imagePreview && (
+            <div style={{ 
+              marginBottom: '16px', 
+              position: 'relative', 
+              display: 'inline-block',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              border: '1px solid rgba(255,255,255,0.2)'
+            }}>
+              <img 
+                src={imagePreview} 
+                alt="Preview" 
+                style={{ 
+                  maxHeight: '150px', 
+                  maxWidth: '300px', 
+                  display: 'block',
+                  borderRadius: '8px'
+                }} 
+              />
+              <button
+                onClick={handleRemoveImage}
+                style={{
+                  position: 'absolute',
+                  top: '4px',
+                  right: '4px',
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '24px',
+                  height: '24px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+          )}
+          
+          <form onSubmit={handleSubmit} style={{ maxWidth: '800px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', position: 'relative' }}>
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Message ChatGPT..."
+                className="input-box"
+                style={{ paddingRight: '96px' }}
+              />
+              
+              <div style={{ 
+                position: 'absolute',
+                right: '48px',
+                bottom: '12px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                padding: '8px'
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M13 5L20 12L13 19M5 5L12 12L5 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+                gap: '8px'
+              }}>
+                {/* Hidden file input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleImageSelect}
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                />
+                
+                {/* Image upload button */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ 
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'rgba(255,255,255,0.7)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '6px',
+                    borderRadius: '4px'
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M4 16l4-4 4 4M14 12l2-2 4 4M14 22H4a2 2 0 01-2-2V4a2 2 0 012-2h16a2 2 0 012 2v16a2 2 0 01-2 2h-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    <circle cx="8" cy="8" r="2" stroke="currentColor" strokeWidth="2" />
+                  </svg>
+                </button>
+              </div>
+              
+              <button
+                type="submit"
+                disabled={isLoading || (!input.trim() && !selectedImage)}
+                style={{ 
+                  position: 'absolute', 
+                  right: '12px', 
+                  bottom: '12px', 
+                  backgroundColor: 'transparent', 
+                  border: 'none', 
+                  color: isLoading || (!input.trim() && !selectedImage) ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.7)', 
+                  cursor: isLoading || (!input.trim() && !selectedImage) ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '8px'
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M13 5L20 12L13 19M5 5L12 12L5 19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
             
             <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)', fontSize: '12px', marginTop: '8px' }}>
               {isLoading ? 'Processing...' : 'Press Enter to send, Shift+Enter for new line'}
