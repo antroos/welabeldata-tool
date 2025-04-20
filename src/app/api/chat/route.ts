@@ -16,7 +16,7 @@ const supportedModels = ['gpt-4o', 'gpt-4', 'gpt-3.5-turbo', 'gpt-4-turbo'];
 
 export async function POST(req: Request) {
   try {
-    const { messages, model } = await req.json();
+    const { messages, model, stream = false } = await req.json();
     
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json(
@@ -47,6 +47,66 @@ export async function POST(req: Request) {
     console.log(`Making OpenAI API call to model: ${model} with ${messages.length} messages`);
     
     try {
+      // Если запрошен потоковый режим, возвращаем поток данных
+      if (stream) {
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        const response = await openai.chat.completions.create({
+          model: model,
+          messages: messages,
+          stream: true,
+        });
+
+        const stream = new ReadableStream({
+          async start(controller) {
+            let fullResponse = '';
+            
+            // Отправляем начальное сообщение со служебной информацией
+            controller.enqueue(encoder.encode(JSON.stringify({ type: 'start', modelName: model }) + '\n'));
+            
+            try {
+              for await (const chunk of response) {
+                const content = chunk.choices[0]?.delta?.content || '';
+                if (content) {
+                  fullResponse += content;
+                  // Отправляем фрагмент текста через поток
+                  controller.enqueue(encoder.encode(JSON.stringify({ 
+                    type: 'chunk', 
+                    content: content,
+                    model: model
+                  }) + '\n'));
+                }
+              }
+              
+              // Отправляем завершающее сообщение
+              controller.enqueue(encoder.encode(JSON.stringify({ 
+                type: 'end', 
+                content: fullResponse,
+                model: model
+              }) + '\n'));
+              
+              controller.close();
+            } catch (error) {
+              controller.enqueue(encoder.encode(JSON.stringify({ 
+                type: 'error', 
+                error: (error as Error).message 
+              }) + '\n'));
+              controller.close();
+            }
+          }
+        });
+
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+          },
+        });
+      }
+      
+      // Обычный режим без потоковой передачи
       const response = await openai.chat.completions.create({
         model: model,
         messages: messages,
