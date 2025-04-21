@@ -12,6 +12,12 @@ import {
   createNewWorkflow, 
   exportWorkflow 
 } from '../../lib/storageService';
+import { 
+  getPurposeSuggestion,
+  getOutcomeSuggestion,
+  getCategorySuggestion,
+  getRelationshipSuggestions
+} from '../../lib/annotationService';
 
 interface Step {
   id: string;
@@ -33,6 +39,17 @@ export default function WorkflowEditor() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [aiLoading, setAiLoading] = useState<{
+    purpose: boolean;
+    outcome: boolean;
+    category: boolean;
+    relationships: boolean;
+  }>({
+    purpose: false,
+    outcome: false,
+    category: false,
+    relationships: false
+  });
   
   // Initialize with a new workflow on first load
   useEffect(() => {
@@ -155,6 +172,190 @@ export default function WorkflowEditor() {
     { id: 'output', name: 'Output' },
     { id: 'other', name: 'Other' }
   ];
+  
+  // Request AI suggestion for purpose
+  const handleRequestPurposeSuggestion = async () => {
+    if (!activeStepId || !activeStep) return;
+    
+    setAiLoading(prev => ({ ...prev, purpose: true }));
+    
+    try {
+      const imageFile = activeStep.imageData ? 
+        dataURLtoFile(activeStep.imageData, `step-${activeStepId}.png`) : 
+        undefined;
+      
+      const suggestion = await getPurposeSuggestion(activeStep, imageFile);
+      
+      if (suggestion) {
+        setSteps(steps.map(step => 
+          step.id === activeStepId 
+            ? { ...step, purpose: suggestion }
+            : step
+        ));
+      }
+    } catch (error) {
+      console.error('Error getting purpose suggestion:', error);
+    } finally {
+      setAiLoading(prev => ({ ...prev, purpose: false }));
+    }
+  };
+  
+  // Request AI suggestion for expected outcome
+  const handleRequestOutcomeSuggestion = async () => {
+    if (!activeStepId || !activeStep) return;
+    
+    setAiLoading(prev => ({ ...prev, outcome: true }));
+    
+    try {
+      const imageFile = activeStep.imageData ? 
+        dataURLtoFile(activeStep.imageData, `step-${activeStepId}.png`) : 
+        undefined;
+      
+      const suggestion = await getOutcomeSuggestion(activeStep, imageFile);
+      
+      if (suggestion) {
+        setSteps(steps.map(step => 
+          step.id === activeStepId 
+            ? { ...step, expectedOutcome: suggestion }
+            : step
+        ));
+      }
+    } catch (error) {
+      console.error('Error getting outcome suggestion:', error);
+    } finally {
+      setAiLoading(prev => ({ ...prev, outcome: false }));
+    }
+  };
+  
+  // Request AI suggestion for category
+  const handleRequestCategorySuggestion = async () => {
+    if (!activeStepId || !activeStep) return;
+    
+    setAiLoading(prev => ({ ...prev, category: true }));
+    
+    try {
+      const imageFile = activeStep.imageData ? 
+        dataURLtoFile(activeStep.imageData, `step-${activeStepId}.png`) : 
+        undefined;
+      
+      const suggestion = await getCategorySuggestion(activeStep, imageFile);
+      
+      if (suggestion) {
+        setSteps(steps.map(step => 
+          step.id === activeStepId 
+            ? { ...step, category: suggestion }
+            : step
+        ));
+      }
+    } catch (error) {
+      console.error('Error getting category suggestion:', error);
+    } finally {
+      setAiLoading(prev => ({ ...prev, category: false }));
+    }
+  };
+  
+  // Request AI suggestion for relationships
+  const handleRequestRelationshipSuggestions = async () => {
+    if (!activeStepId || !activeStep) return;
+    
+    setAiLoading(prev => ({ ...prev, relationships: true }));
+    
+    try {
+      // Prepare step data with all other steps for context
+      const stepDataWithContext = {
+        ...activeStep,
+        allSteps: steps.map((step, index) => ({
+          id: step.id,
+          title: step.title,
+          description: step.description,
+          purpose: step.purpose,
+          index
+        }))
+      };
+      
+      const suggestions = await getRelationshipSuggestions(stepDataWithContext);
+      
+      if (suggestions && (suggestions.prerequisites.length > 0 || suggestions.dependents.length > 0)) {
+        // Get IDs from indexes
+        const prerequisiteIds = suggestions.prerequisites
+          .map(index => {
+            const step = steps.find((_, i) => i === index - 1);
+            return step?.id;
+          })
+          .filter(id => id !== undefined) as string[];
+        
+        const dependentIds = suggestions.dependents
+          .map(index => {
+            const step = steps.find((_, i) => i === index - 1);
+            return step?.id;
+          })
+          .filter(id => id !== undefined) as string[];
+        
+        // Update the active step
+        setSteps(prevSteps => {
+          const updatedSteps = [...prevSteps];
+          
+          // Update active step with suggested relationships
+          const activeStepIndex = updatedSteps.findIndex(s => s.id === activeStepId);
+          if (activeStepIndex >= 0) {
+            updatedSteps[activeStepIndex] = {
+              ...updatedSteps[activeStepIndex],
+              prerequisiteSteps: prerequisiteIds
+            };
+          }
+          
+          // Update dependent steps automatically
+          dependentIds.forEach(dependentId => {
+            const dependentIndex = updatedSteps.findIndex(s => s.id === dependentId);
+            if (dependentIndex >= 0) {
+              const currentPrereqs = updatedSteps[dependentIndex].prerequisiteSteps || [];
+              if (!currentPrereqs.includes(activeStepId)) {
+                updatedSteps[dependentIndex] = {
+                  ...updatedSteps[dependentIndex],
+                  prerequisiteSteps: [...currentPrereqs, activeStepId]
+                };
+              }
+            }
+          });
+          
+          // Update prerequisite steps automatically
+          prerequisiteIds.forEach(prereqId => {
+            const prereqIndex = updatedSteps.findIndex(s => s.id === prereqId);
+            if (prereqIndex >= 0) {
+              const currentDependents = updatedSteps[prereqIndex].dependentSteps || [];
+              if (!currentDependents.includes(activeStepId)) {
+                updatedSteps[prereqIndex] = {
+                  ...updatedSteps[prereqIndex],
+                  dependentSteps: [...currentDependents, activeStepId]
+                };
+              }
+            }
+          });
+          
+          return updatedSteps;
+        });
+      }
+    } catch (error) {
+      console.error('Error getting relationship suggestions:', error);
+    } finally {
+      setAiLoading(prev => ({ ...prev, relationships: false }));
+    }
+  };
+  
+  // Helper function to convert data URL to File
+  const dataURLtoFile = (dataUrl: string, filename: string): File => {
+    const arr = dataUrl.split(',');
+    const mime = arr[0].match(/:(.*?);/)![1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    
+    return new File([u8arr], filename, { type: mime });
+  };
   
   if (isLoading) {
     return (
@@ -302,24 +503,43 @@ export default function WorkflowEditor() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Step Category
                       </label>
-                      <select 
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-                        value={activeStep?.category || ''}
-                        onChange={(e) => {
-                          setSteps(steps.map(step => 
-                            step.id === activeStepId 
-                              ? { ...step, category: e.target.value }
-                              : step
-                          ));
-                        }}
-                      >
-                        <option value="">Select a category</option>
-                        {stepCategories.map(category => (
-                          <option key={category.id} value={category.id}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex gap-2">
+                        <select 
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+                          value={activeStep?.category || ''}
+                          onChange={(e) => {
+                            setSteps(steps.map(step => 
+                              step.id === activeStepId 
+                                ? { ...step, category: e.target.value }
+                                : step
+                            ));
+                          }}
+                        >
+                          <option value="">Select a category</option>
+                          {stepCategories.map(category => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className={`flex items-center justify-center px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-blue-50 hover:bg-blue-100 text-blue-600 ${aiLoading.category ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={handleRequestCategorySuggestion}
+                          disabled={aiLoading.category}
+                          title="Get AI suggestion for category"
+                        >
+                          {aiLoading.category ? (
+                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                       <p className="text-xs text-gray-500 mt-1">
                         Categorize this step based on the type of action being performed
                       </p>
@@ -329,45 +549,103 @@ export default function WorkflowEditor() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Purpose <span className="text-xs text-gray-500">(Why this action is performed)</span>
                       </label>
-                      <textarea 
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-                        rows={2}
-                        placeholder="Example: To submit user credentials for authentication"
-                        value={activeStep?.purpose || ''}
-                        onChange={(e) => {
-                          setSteps(steps.map(step => 
-                            step.id === activeStepId 
-                              ? { ...step, purpose: e.target.value }
-                              : step
-                          ));
-                        }}
-                      />
+                      <div className="flex gap-2">
+                        <textarea 
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+                          rows={2}
+                          placeholder="Example: To submit user credentials for authentication"
+                          value={activeStep?.purpose || ''}
+                          onChange={(e) => {
+                            setSteps(steps.map(step => 
+                              step.id === activeStepId 
+                                ? { ...step, purpose: e.target.value }
+                                : step
+                            ));
+                          }}
+                        />
+                        <button
+                          className={`flex items-center justify-center px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-blue-50 hover:bg-blue-100 text-blue-600 ${aiLoading.purpose ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={handleRequestPurposeSuggestion}
+                          disabled={aiLoading.purpose}
+                          title="Get AI suggestion for purpose"
+                        >
+                          {aiLoading.purpose ? (
+                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Expected Outcome <span className="text-xs text-gray-500">(What should happen after this action)</span>
                       </label>
-                      <textarea 
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
-                        rows={2}
-                        placeholder="Example: User is logged in and redirected to dashboard page"
-                        value={activeStep?.expectedOutcome || ''}
-                        onChange={(e) => {
-                          setSteps(steps.map(step => 
-                            step.id === activeStepId 
-                              ? { ...step, expectedOutcome: e.target.value }
-                              : step
-                          ));
-                        }}
-                      />
+                      <div className="flex gap-2">
+                        <textarea 
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+                          rows={2}
+                          placeholder="Example: User is logged in and redirected to dashboard page"
+                          value={activeStep?.expectedOutcome || ''}
+                          onChange={(e) => {
+                            setSteps(steps.map(step => 
+                              step.id === activeStepId 
+                                ? { ...step, expectedOutcome: e.target.value }
+                                : step
+                            ));
+                          }}
+                        />
+                        <button
+                          className={`flex items-center justify-center px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-blue-50 hover:bg-blue-100 text-blue-600 ${aiLoading.outcome ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onClick={handleRequestOutcomeSuggestion}
+                          disabled={aiLoading.outcome}
+                          title="Get AI suggestion for expected outcome"
+                        >
+                          {aiLoading.outcome ? (
+                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
                 
                 {/* Step Relationships Section */}
                 <div className="border-t pt-6">
-                  <h3 className="text-md font-medium text-gray-700 mb-4">Step Relationships</h3>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-md font-medium text-gray-700">Step Relationships</h3>
+                    <button
+                      className={`flex items-center gap-1 px-3 py-1 text-sm border border-gray-300 rounded-md shadow-sm bg-blue-50 hover:bg-blue-100 text-blue-600 ${aiLoading.relationships ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      onClick={handleRequestRelationshipSuggestions}
+                      disabled={aiLoading.relationships}
+                      title="Get AI suggestion for relationships"
+                    >
+                      {aiLoading.relationships ? (
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      )}
+                      <span>AI Suggest Relationships</span>
+                    </button>
+                  </div>
                   
                   <div className="space-y-4">
                     {/* Prerequisites */}
