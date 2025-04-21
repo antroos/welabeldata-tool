@@ -65,6 +65,32 @@ export default function WorkflowViewer() {
   const getScreenshotCount = (workflow: Workflow) => {
     return workflow.steps.filter(step => step.imageData).length;
   };
+  
+  // Get the count of steps with purpose defined
+  const getPurposeCount = (workflow: Workflow) => {
+    return workflow.steps.filter(step => step.purpose && step.purpose.trim() !== '').length;
+  };
+  
+  // Get the count of steps with relationships defined
+  const getRelationshipsCount = (workflow: Workflow) => {
+    return workflow.steps.filter(step => 
+      (step.prerequisiteSteps && step.prerequisiteSteps.length > 0) || 
+      (step.dependentSteps && step.dependentSteps.length > 0)
+    ).length;
+  };
+
+  // Get category badge color
+  const getCategoryBadgeColor = (category?: string) => {
+    if (!category) return 'bg-gray-100 text-gray-600';
+    
+    switch (category.toLowerCase()) {
+      case 'input': return 'bg-green-100 text-green-800';
+      case 'navigation': return 'bg-blue-100 text-blue-800';
+      case 'verification': return 'bg-purple-100 text-purple-800';
+      case 'output': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-600';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
@@ -102,6 +128,8 @@ export default function WorkflowViewer() {
               <div className="space-y-3">
                 {workflows.map(workflow => {
                   const screenshotCount = getScreenshotCount(workflow);
+                  const purposeCount = getPurposeCount(workflow);
+                  const relationshipsCount = getRelationshipsCount(workflow);
                   
                   return (
                     <div 
@@ -135,7 +163,13 @@ export default function WorkflowViewer() {
                           {screenshotCount} screenshots
                         </span>
                         <span>•</span>
-                        <span>Updated {new Date(workflow.updatedAt).toLocaleDateString()}</span>
+                        <span className={`${purposeCount > 0 ? 'text-indigo-600' : 'text-gray-400'}`}>
+                          {purposeCount} with context
+                        </span>
+                        <span>•</span>
+                        <span className={`${relationshipsCount > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                          {relationshipsCount} with relationships
+                        </span>
                       </div>
                     </div>
                   );
@@ -171,6 +205,11 @@ export default function WorkflowViewer() {
                                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                             } ${
                               step.imageData ? 'ring-1 ring-green-500' : ''
+                            } ${
+                              step.purpose && step.purpose.trim() !== '' ? 'border-b-2 border-indigo-500' : ''
+                            } ${
+                              (step.prerequisiteSteps && step.prerequisiteSteps.length > 0) || 
+                              (step.dependentSteps && step.dependentSteps.length > 0) ? 'border-t-2 border-blue-500' : ''
                             }`}
                             onClick={() => setCurrentStepIndex(index)}
                           >
@@ -185,12 +224,93 @@ export default function WorkflowViewer() {
                       <div className="mb-6">
                         <div className="flex justify-between mb-2">
                           <h3 className="font-medium">{currentStep?.title}</h3>
+                          {currentStep?.category && (
+                            <span className={`px-2 py-1 rounded-full text-xs ${getCategoryBadgeColor(currentStep.category)}`}>
+                              {currentStep.category}
+                            </span>
+                          )}
                         </div>
                         
+                        {/* Description */}
                         {currentStep?.description && (
-                          <p className="text-gray-600 mb-4">{currentStep.description}</p>
+                          <div className="mb-4 bg-gray-50 p-3 rounded">
+                            <p className="text-gray-700">{currentStep.description}</p>
+                          </div>
                         )}
                         
+                        {/* Context Information */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                          <div className="bg-blue-50 p-4 rounded-lg">
+                            <h4 className="text-sm font-medium text-blue-700 mb-2">Purpose</h4>
+                            {currentStep?.purpose && currentStep.purpose.trim() !== '' ? (
+                              <p className="text-sm text-gray-700">{currentStep.purpose}</p>
+                            ) : (
+                              <p className="text-sm text-gray-400 italic">No purpose defined</p>
+                            )}
+                          </div>
+                          
+                          <div className="bg-green-50 p-4 rounded-lg">
+                            <h4 className="text-sm font-medium text-green-700 mb-2">Expected Outcome</h4>
+                            {currentStep?.expectedOutcome && currentStep.expectedOutcome.trim() !== '' ? (
+                              <p className="text-sm text-gray-700">{currentStep.expectedOutcome}</p>
+                            ) : (
+                              <p className="text-sm text-gray-400 italic">No outcome defined</p>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {/* Step Relationships */}
+                        <div className="mb-6">
+                          <h4 className="text-sm font-medium text-gray-700 mb-2">Step Relationships</h4>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Prerequisites */}
+                            <div className="bg-indigo-50 p-4 rounded-lg">
+                              <h5 className="text-xs font-medium text-indigo-700 mb-2">Prerequisites</h5>
+                              {currentStep?.prerequisiteSteps && currentStep.prerequisiteSteps.length > 0 ? (
+                                <ul className="text-sm text-gray-700 space-y-1">
+                                  {currentStep.prerequisiteSteps.map(prereqId => {
+                                    const prereqStep = selectedWorkflow?.steps.find(s => s.id === prereqId);
+                                    return (
+                                      <li key={prereqId} className="flex items-center">
+                                        <span className="w-5 h-5 rounded-full bg-indigo-200 text-indigo-800 flex items-center justify-center text-xs mr-2">
+                                          {selectedWorkflow?.steps.findIndex(s => s.id === prereqId) + 1}
+                                        </span>
+                                        <span>{prereqStep?.title || 'Unknown step'}</span>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : (
+                                <p className="text-sm text-gray-400 italic">No prerequisites for this step</p>
+                              )}
+                            </div>
+                            
+                            {/* Dependent Steps */}
+                            <div className="bg-purple-50 p-4 rounded-lg">
+                              <h5 className="text-xs font-medium text-purple-700 mb-2">Leads To</h5>
+                              {currentStep?.dependentSteps && currentStep.dependentSteps.length > 0 ? (
+                                <ul className="text-sm text-gray-700 space-y-1">
+                                  {currentStep.dependentSteps.map(depId => {
+                                    const depStep = selectedWorkflow?.steps.find(s => s.id === depId);
+                                    return (
+                                      <li key={depId} className="flex items-center">
+                                        <span className="w-5 h-5 rounded-full bg-purple-200 text-purple-800 flex items-center justify-center text-xs mr-2">
+                                          {selectedWorkflow?.steps.findIndex(s => s.id === depId) + 1}
+                                        </span>
+                                        <span>{depStep?.title || 'Unknown step'}</span>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : (
+                                <p className="text-sm text-gray-400 italic">No dependent steps</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Screenshot */}
                         {currentStep?.imageData ? (
                           <div className="relative border rounded-lg overflow-hidden bg-gray-100" style={{ height: '300px' }}>
                             <Image 

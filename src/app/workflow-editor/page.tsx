@@ -18,6 +18,13 @@ interface Step {
   title: string;
   description?: string;
   imageData?: string;
+  purpose?: string;        // Why this action is performed
+  expectedOutcome?: string; // What should happen after this action
+  prerequisiteSteps?: string[];  // IDs of steps that must be completed before this one
+  dependentSteps?: string[];     // IDs of steps that depend on this one
+  category?: string;             // Category or type of action (e.g., "input", "navigation", "verification")
+  createdAt?: number;      // Creation timestamp
+  updatedAt?: number;      // Last update timestamp
   isActive?: boolean;
 }
 
@@ -54,6 +61,11 @@ export default function WorkflowEditor() {
         title: step.title,
         description: step.description,
         imageData: step.imageData,
+        purpose: step.purpose,
+        expectedOutcome: step.expectedOutcome,
+        prerequisiteSteps: step.prerequisiteSteps,
+        dependentSteps: step.dependentSteps,
+        category: step.category,
         createdAt: Date.now(),
         updatedAt: Date.now()
       }));
@@ -70,11 +82,19 @@ export default function WorkflowEditor() {
   }, [workflow, steps, isLoading]);
   
   const addStep = () => {
+    const now = Date.now();
     const newStep = {
-      id: `step-${Date.now()}`,
+      id: `step-${now}`,
       title: `Step ${steps.length + 1}`,
       description: 'Click to edit this step',
-      imageData: undefined
+      imageData: undefined,
+      purpose: '',
+      expectedOutcome: '',
+      prerequisiteSteps: [],
+      dependentSteps: [],
+      category: '',
+      createdAt: now,
+      updatedAt: now
     };
     
     setSteps([...steps, newStep]);
@@ -113,6 +133,28 @@ export default function WorkflowEditor() {
   const activeStep = activeStepId 
     ? steps.find(step => step.id === activeStepId) 
     : null;
+  
+  // Get the count of steps with purpose defined
+  const getStepsWithPurpose = () => {
+    return steps.filter(s => s.purpose && s.purpose.trim() !== '').length;
+  };
+  
+  // Get the count of steps with relationships defined
+  const getStepsWithRelationships = () => {
+    return steps.filter(s => 
+      (s.prerequisiteSteps && s.prerequisiteSteps.length > 0) || 
+      (s.dependentSteps && s.dependentSteps.length > 0)
+    ).length;
+  };
+  
+  // Available step categories
+  const stepCategories = [
+    { id: 'input', name: 'Input' },
+    { id: 'navigation', name: 'Navigation' },
+    { id: 'verification', name: 'Verification' },
+    { id: 'output', name: 'Output' },
+    { id: 'other', name: 'Other' }
+  ];
   
   if (isLoading) {
     return (
@@ -186,6 +228,12 @@ export default function WorkflowEditor() {
                 <p className="text-sm text-gray-600">
                   {steps.filter(s => s.imageData).length} step{steps.filter(s => s.imageData).length !== 1 ? 's' : ''} with screenshots
                 </p>
+                <p className="text-sm text-gray-600">
+                  {getStepsWithPurpose()} step{getStepsWithPurpose() !== 1 ? 's' : ''} with purpose defined
+                </p>
+                <p className="text-sm text-gray-600">
+                  {getStepsWithRelationships()} step{getStepsWithRelationships() !== 1 ? 's' : ''} with relationships
+                </p>
               </div>
             )}
           </div>
@@ -206,6 +254,7 @@ export default function WorkflowEditor() {
               </div>
             ) : (
               <div className="space-y-6">
+                {/* Basic Information */}
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -244,6 +293,164 @@ export default function WorkflowEditor() {
                   </div>
                 </div>
                 
+                {/* Context Information Section */}
+                <div className="border-t pt-6">
+                  <h3 className="text-md font-medium text-gray-700 mb-4">Context Information</h3>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Step Category
+                      </label>
+                      <select 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+                        value={activeStep?.category || ''}
+                        onChange={(e) => {
+                          setSteps(steps.map(step => 
+                            step.id === activeStepId 
+                              ? { ...step, category: e.target.value }
+                              : step
+                          ));
+                        }}
+                      >
+                        <option value="">Select a category</option>
+                        {stepCategories.map(category => (
+                          <option key={category.id} value={category.id}>
+                            {category.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Categorize this step based on the type of action being performed
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Purpose <span className="text-xs text-gray-500">(Why this action is performed)</span>
+                      </label>
+                      <textarea 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+                        rows={2}
+                        placeholder="Example: To submit user credentials for authentication"
+                        value={activeStep?.purpose || ''}
+                        onChange={(e) => {
+                          setSteps(steps.map(step => 
+                            step.id === activeStepId 
+                              ? { ...step, purpose: e.target.value }
+                              : step
+                          ));
+                        }}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Expected Outcome <span className="text-xs text-gray-500">(What should happen after this action)</span>
+                      </label>
+                      <textarea 
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm"
+                        rows={2}
+                        placeholder="Example: User is logged in and redirected to dashboard page"
+                        value={activeStep?.expectedOutcome || ''}
+                        onChange={(e) => {
+                          setSteps(steps.map(step => 
+                            step.id === activeStepId 
+                              ? { ...step, expectedOutcome: e.target.value }
+                              : step
+                          ));
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Step Relationships Section */}
+                <div className="border-t pt-6">
+                  <h3 className="text-md font-medium text-gray-700 mb-4">Step Relationships</h3>
+                  
+                  <div className="space-y-4">
+                    {/* Prerequisites */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Prerequisite Steps <span className="text-xs text-gray-500">(Steps that must be completed before this one)</span>
+                      </label>
+                      <div className="border border-gray-300 rounded-md p-3 bg-gray-50">
+                        {steps.length <= 1 ? (
+                          <p className="text-sm text-gray-500">No other steps available to select as prerequisites</p>
+                        ) : (
+                          <div className="space-y-2">
+                            {steps.filter(s => s.id !== activeStepId).map(step => (
+                              <div key={step.id} className="flex items-center">
+                                <input 
+                                  type="checkbox" 
+                                  id={`prereq-${step.id}`}
+                                  className="h-4 w-4 text-blue-600 rounded border-gray-300"
+                                  checked={activeStep?.prerequisiteSteps?.includes(step.id) || false}
+                                  onChange={(e) => {
+                                    const isChecked = e.target.checked;
+                                    
+                                    setSteps(steps.map(s => {
+                                      if (s.id !== activeStepId) return s;
+                                      
+                                      // Update prerequisiteSteps based on checkbox
+                                      const currentPrereqs = s.prerequisiteSteps || [];
+                                      let newPrereqs = [...currentPrereqs];
+                                      
+                                      if (isChecked && !newPrereqs.includes(step.id)) {
+                                        newPrereqs.push(step.id);
+                                      } else if (!isChecked) {
+                                        newPrereqs = newPrereqs.filter(id => id !== step.id);
+                                      }
+                                      
+                                      // Also update the dependent step automatically
+                                      const targetStep = steps.find(ts => ts.id === step.id);
+                                      if (targetStep) {
+                                        const targetDeps = targetStep.dependentSteps || [];
+                                        
+                                        if (isChecked && !targetDeps.includes(activeStepId)) {
+                                          // Add current step as dependent to the prerequisite step
+                                          setSteps(prev => prev.map(ps => 
+                                            ps.id === step.id
+                                              ? { 
+                                                  ...ps, 
+                                                  dependentSteps: [...(ps.dependentSteps || []), activeStepId] 
+                                                }
+                                              : ps
+                                          ));
+                                        } else if (!isChecked) {
+                                          // Remove current step as dependent from the prerequisite step
+                                          setSteps(prev => prev.map(ps => 
+                                            ps.id === step.id
+                                              ? { 
+                                                  ...ps, 
+                                                  dependentSteps: (ps.dependentSteps || []).filter(id => id !== activeStepId)
+                                                }
+                                              : ps
+                                          ));
+                                        }
+                                      }
+                                      
+                                      return { ...s, prerequisiteSteps: newPrereqs };
+                                    }));
+                                  }}
+                                />
+                                <label htmlFor={`prereq-${step.id}`} className="ml-2 text-sm text-gray-700">
+                                  {step.title}
+                                </label>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">
+                        Select steps that must be completed before this step can be performed
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Screenshot Section */}
                 <div className="border-t pt-6">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Screenshot for "{activeStep?.title}"
@@ -262,7 +469,7 @@ export default function WorkflowEditor() {
                   </div>
                 </div>
                 
-                <div className="pt-4">
+                <div className="pt-4 border-t flex justify-between">
                   <button 
                     className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
                     onClick={() => {
@@ -272,6 +479,12 @@ export default function WorkflowEditor() {
                   >
                     Delete Step
                   </button>
+                  
+                  <div className="text-xs text-gray-500 italic self-center">
+                    {activeStep?.updatedAt 
+                      ? `Last updated: ${new Date(activeStep.updatedAt).toLocaleString()}` 
+                      : 'New step'}
+                  </div>
                 </div>
               </div>
             )}

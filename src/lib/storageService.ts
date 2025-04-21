@@ -7,6 +7,11 @@ export interface WorkflowStep {
   title: string;
   description?: string;
   imageData?: string;
+  purpose?: string;        // Why this action is performed
+  expectedOutcome?: string; // What should happen after this action
+  prerequisiteSteps?: string[];  // IDs of steps that must be completed before this one
+  dependentSteps?: string[];     // IDs of steps that depend on this one
+  category?: string;             // Category or type of action (e.g., "input", "navigation", "verification")
   createdAt: number;
   updatedAt: number;
 }
