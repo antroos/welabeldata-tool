@@ -5,6 +5,8 @@
 
 import { StorageModule } from './StorageModule';
 import { WorkflowStorage, Workflow } from './WorkflowStorage';
+import { AnnotationStorage, StepCategory } from './AnnotationStorage';
+import { PreferencesStorage } from './PreferencesStorage';
 
 // Test basic StorageModule
 function testBaseStorageModule(): boolean {
@@ -109,6 +111,145 @@ function testWorkflowStorage(): boolean {
   }
 }
 
+// Test AnnotationStorage
+function testAnnotationStorage(): boolean {
+  console.group('Testing Annotation Storage Module');
+  
+  try {
+    // Create storage instance
+    const annotationStorage = new AnnotationStorage();
+    annotationStorage.set({}); // Clear any existing data
+    
+    // Create test data
+    const workflowId = 'test-workflow-1';
+    const stepId = 'test-step-1';
+    const annotation = {
+      id: stepId,
+      title: 'Test Step',
+      description: 'A test step',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    // Save annotation
+    const saveResult = annotationStorage.saveStepAnnotation(workflowId, stepId, annotation);
+    console.log('Save annotation test:', saveResult === true);
+    
+    // Get annotation
+    const retrievedAnnotation = annotationStorage.getStepAnnotation(workflowId, stepId);
+    console.log('Get annotation test:', retrievedAnnotation !== null && retrievedAnnotation.id === stepId);
+    
+    // Update annotation field
+    const updateResult = annotationStorage.updateAnnotationField(
+      workflowId, 
+      stepId, 
+      'purpose', 
+      'This is a test purpose'
+    );
+    console.log('Update annotation field test:', updateResult === true);
+    
+    // Get updated annotation
+    const updatedAnnotation = annotationStorage.getStepAnnotation(workflowId, stepId);
+    console.log('Verify update test:', updatedAnnotation?.purpose === 'This is a test purpose');
+    
+    // Update relationships
+    const relationshipResult = annotationStorage.updateStepRelationships(
+      workflowId,
+      stepId,
+      ['prereq-1', 'prereq-2'],
+      ['dep-1']
+    );
+    console.log('Update relationships test:', relationshipResult === true);
+    
+    // Get stats
+    const stats = annotationStorage.getAnnotationStats(workflowId);
+    console.log('Get stats test:', stats.total === 1 && stats.withPurpose === 1);
+    
+    // Delete step annotation
+    const deleteStepResult = annotationStorage.deleteStepAnnotation(workflowId, stepId);
+    console.log('Delete step annotation test:', deleteStepResult === true);
+    
+    // Verify deletion
+    const deletedAnnotation = annotationStorage.getStepAnnotation(workflowId, stepId);
+    console.log('Verify step deletion test:', deletedAnnotation === null);
+    
+    // Clean up
+    annotationStorage.set({});
+    
+    console.log('Annotation Storage Tests Passed!');
+    console.groupEnd();
+    return true;
+  } catch (error) {
+    console.error('Annotation Storage Tests Failed:', error);
+    console.groupEnd();
+    return false;
+  }
+}
+
+// Test PreferencesStorage
+function testPreferencesStorage(): boolean {
+  console.group('Testing Preferences Storage Module');
+  
+  try {
+    // Create storage instance
+    const preferencesStorage = new PreferencesStorage();
+    
+    // Reset to defaults
+    const resetResult = preferencesStorage.resetToDefaults();
+    console.log('Reset to defaults test:', resetResult === true);
+    
+    // Get preferences
+    const preferences = preferencesStorage.getPreferences();
+    console.log('Get preferences test:', preferences !== null);
+    
+    // Update theme preferences
+    const themeResult = preferencesStorage.updateThemePreferences({
+      darkMode: true,
+      colorScheme: 'blue'
+    });
+    console.log('Update theme test:', themeResult === true);
+    
+    // Verify theme update
+    const updatedPreferences = preferencesStorage.getPreferences();
+    console.log('Verify theme update test:', 
+      updatedPreferences.theme.darkMode === true && 
+      updatedPreferences.theme.colorScheme === 'blue'
+    );
+    
+    // Update editor preferences
+    const editorResult = preferencesStorage.updateEditorPreferences({
+      autoSave: false,
+      defaultCategory: 'navigation'
+    });
+    console.log('Update editor test:', editorResult === true);
+    
+    // Set last used model
+    const modelResult = preferencesStorage.setLastUsedModel('gpt-4-turbo');
+    console.log('Set last used model test:', modelResult === true);
+    
+    // Add recent workflow
+    const recentResult = preferencesStorage.addRecentWorkflow('workflow-123');
+    console.log('Add recent workflow test:', recentResult === true);
+    
+    // Verify recent workflow
+    const finalPreferences = preferencesStorage.getPreferences();
+    console.log('Verify recent workflow test:', 
+      finalPreferences.recentWorkflows.includes('workflow-123')
+    );
+    
+    // Clean up
+    preferencesStorage.resetToDefaults();
+    
+    console.log('Preferences Storage Tests Passed!');
+    console.groupEnd();
+    return true;
+  } catch (error) {
+    console.error('Preferences Storage Tests Failed:', error);
+    console.groupEnd();
+    return false;
+  }
+}
+
 // Test migration from old format
 function testMigration(): boolean {
   console.group('Testing Migration From Old Format');
@@ -166,11 +307,19 @@ export function runStorageTests(): void {
   
   const baseResult = testBaseStorageModule();
   const workflowResult = testWorkflowStorage();
+  const annotationResult = testAnnotationStorage();
+  const preferencesResult = testPreferencesStorage();
   const migrationResult = testMigration();
   
   console.log('=== Test Results ===');
   console.log('Base Storage Module:', baseResult ? 'PASSED' : 'FAILED');
   console.log('Workflow Storage:', workflowResult ? 'PASSED' : 'FAILED');
+  console.log('Annotation Storage:', annotationResult ? 'PASSED' : 'FAILED');
+  console.log('Preferences Storage:', preferencesResult ? 'PASSED' : 'FAILED');
   console.log('Migration Test:', migrationResult ? 'PASSED' : 'FAILED');
-  console.log('Overall Result:', (baseResult && workflowResult && migrationResult) ? 'ALL TESTS PASSED' : 'TESTS FAILED');
+  console.log('Overall Result:', 
+    (baseResult && workflowResult && annotationResult && preferencesResult && migrationResult) 
+      ? 'ALL TESTS PASSED' 
+      : 'TESTS FAILED'
+  );
 } 
