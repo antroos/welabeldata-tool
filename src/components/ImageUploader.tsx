@@ -54,9 +54,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
       return;
     }
     
-    // Check file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Image must be less than 5MB');
+    // Check file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Image must be less than 10MB');
       return;
     }
     
