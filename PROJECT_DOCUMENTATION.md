@@ -77,6 +77,8 @@ Modular service implementations:
 - `/storage` - New modular storage architecture
   - `StorageModule.ts` - Base module with common storage operations
   - `WorkflowStorage.ts` - Workflow-specific storage implementation
+  - `AnnotationStorage.ts` - Step annotation storage implementation
+  - `PreferencesStorage.ts` - User preferences storage implementation
   - `StorageTest.ts` - Testing utilities for storage modules
 
 ## Key Features
@@ -154,21 +156,42 @@ The new storage architecture follows these principles:
    - Error handling
    - Automatic versioning
    - Data validation
+   - Data backup and recovery
 
-2. **Specialized Modules**:
+2. **Specialized Modules** (Completed):
    - `WorkflowStorage` extends the base module for workflow-specific operations
-   - Implements migration from the old storage format
-   - Provides workflow-specific validation and operations
+   - `AnnotationStorage` for step annotations with statistics and relationship management
+   - `PreferencesStorage` for user settings with theme, editor, and export preferences
+   - Migration paths from old storage formats
 
 3. **Future Extensions**:
-   - `AnnotationStorage` (planned) for step annotations
-   - `PreferencesStorage` (planned) for user settings
-   - `ExportHistoryStorage` (planned) for export records
+   - Data compression for large objects (screenshots)
+   - Chunking for datasets exceeding localStorage limits
+   - Auto-save with conflict resolution
+   - Export history tracking
 
 ### Testing Strategy
 
 The storage architecture includes a dedicated testing module:
 - Tests basic operations (get, set, remove)
 - Tests specialized workflow operations
+- Tests annotation storage capabilities
+- Tests preferences management
 - Tests migration paths for backward compatibility
-- Provides a visual testing interface at `/storage-test` 
+- Provides a visual testing interface at `/storage-test`
+
+## Current Progress
+
+### Completed:
+- Phase 1 of Storage Architecture Refactoring: Base Module and Specialized Storage Implementations
+  - StorageModule base class with versioning and validation
+  - WorkflowStorage with migration from legacy format
+  - AnnotationStorage with relationship management and statistics
+  - PreferencesStorage with theming and user settings
+  - Comprehensive testing suite for all storage modules
+
+### In Progress:
+- Phase 2: Storage Optimizations
+  - Data compression for large objects
+  - Chunking strategy for large datasets
+  - Auto-save functionality 
