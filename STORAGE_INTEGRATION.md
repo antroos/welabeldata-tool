@@ -4,7 +4,7 @@ This document covers the implementation and usage of the storage integration tes
 
 ## Overview
 
-The storage integration tests verify that the storage modules work correctly together as a system. This complements the individual module tests by ensuring proper interaction between different storage components.
+The storage modules work together as a system to provide efficient, type-safe data persistence. This document explains how the modules interact and how to test their functionality both individually and as an integrated system.
 
 ## Implementation Details
 
@@ -20,7 +20,7 @@ The implementation includes:
 
 ### Test Pages
 
-Two test pages are available:
+Several test pages are available for verifying storage functionality:
 
 1. **Storage Module Tests** (`/storage-test`)
    - Tests each storage module independently
@@ -32,6 +32,38 @@ Two test pages are available:
    - Creates and manages workflows end-to-end
    - Verifies preferences are properly saved and retrieved
    - Tests cross-module dependencies
+
+3. **Storage Compression Tests** (`/storage-compression-test`)
+   - Tests the LZ-string compression functionality
+   - Demonstrates compression efficiency
+   - Tests automatic threshold detection
+   - Provides tools to optimize existing storage
+
+## Storage Architecture
+
+### Base Module
+
+The `StorageModule<T>` is the foundation of the storage system, providing:
+
+- Type-safe get/set operations
+- Error handling with graceful fallbacks
+- Automatic versioning for future compatibility
+- Data integrity verification
+
+### Data Compression
+
+To optimize storage usage, especially for large data like image screenshots, the system includes:
+
+- **CompressionService**: Provides LZ-string compression with:
+  - Transparent compression/decompression
+  - Automatic threshold detection
+  - Compression markers to identify compressed data
+  - Configurable threshold settings
+
+- **Integrated Workflow Image Compression**:
+  - Automatically compresses images when they exceed the threshold
+  - Transparently decompresses images when retrieved
+  - Provides optimization utilities to reduce storage usage
 
 ## Key Components
 
@@ -99,32 +131,54 @@ export const useStorage = () => {
 };
 ```
 
-### StorageIntegrationTest.tsx
+### CompressionService.ts
 
-The integration test page component:
+The service that handles data compression and decompression:
 
 ```tsx
-// src/pages/storage-integration-test.tsx
-'use client';
+// src/services/CompressionService.ts
+import LZString from 'lz-string';
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { useStorage, StorageProvider } from '../contexts/StorageContext';
-import { Workflow } from '../services/storage/WorkflowStorage';
+// Marker prefix to identify compressed strings
+const COMPRESSION_MARKER = '__COMPRESSED__:';
 
-function StorageIntegrationTestContent() {
-  const { workflowStorage, annotationStorage, preferencesStorage, isLoaded } = useStorage();
-  // Test implementation
+// Default threshold in bytes for automatic compression
+const DEFAULT_COMPRESSION_THRESHOLD = 10 * 1024; // 10KB
+
+/**
+ * Service for handling data compression and decompression
+ */
+export class CompressionService {
+  private threshold: number;
+
+  constructor(threshold: number = DEFAULT_COMPRESSION_THRESHOLD) {
+    this.threshold = threshold;
+  }
+
+  // Methods for compression, decompression, and threshold detection
   // ...
 }
+```
 
-export default function StorageIntegrationTest() {
-  return (
-    <StorageProvider>
-      <StorageIntegrationTestContent />
-    </StorageProvider>
-  );
-}
+## Using Compression in Your Components
+
+To leverage the compression functionality in your components:
+
+1. Use the standard `useStorage()` hook to access storage modules that automatically handle compression
+
+2. For manual compression control:
+```tsx
+import { CompressionService } from '../services/CompressionService';
+
+// In your component
+const compressionService = new CompressionService();
+
+// Compress large data
+const largeData = "..."; // Some large string
+const compressed = compressionService.autoCompress(largeData);
+
+// Decompress when needed
+const originalData = compressionService.autoDecompress(compressed);
 ```
 
 ## Test Results
@@ -138,15 +192,8 @@ Workflow Storage: PASSED
 Annotation Storage: PASSED
 Preferences Storage: PASSED
 Migration Test: PASSED
+Compression Test: PASSED
 Overall Result: ALL TESTS PASSED
-
-=== Storage Integration Test ===
-Create Workflow: PASSED
-Save Workflow: PASSED
-Retrieve Workflow: PASSED
-Update Workflow: PASSED
-Set Preferences: PASSED
-Get Preferences: PASSED
 ```
 
 ## Usage Notes
@@ -155,8 +202,19 @@ Get Preferences: PASSED
 
 2. **Testing Approach**: The storage integration tests demonstrate the proper usage pattern for consuming storage modules in application components.
 
+3. **Compression Configuration**: You can adjust compression thresholds based on your specific needs:
+
+```tsx
+const workflowStorage = new WorkflowStorage({
+  useCompression: true,
+  compressionThreshold: 5 * 1024 // 5KB threshold
+});
+```
+
 ## Common Issues
 
 1. **"useStorage must be used within a StorageProvider" error**: This indicates that a component is trying to use the `useStorage` hook without being wrapped in a `StorageProvider`. Ensure all components using storage are wrapped appropriately.
 
-2. **Data persistence issues**: If data is not persisting between page refreshes, check that the storage modules are initialized properly and that localStorage is available in the browser. 
+2. **Data persistence issues**: If data is not persisting between page refreshes, check that the storage modules are initialized properly and that localStorage is available in the browser.
+
+3. **Storage Quota Exceeded Errors**: When storing large data, you might hit browser localStorage limits. Enable compression and optimize storage using the methods provided by the storage modules to mitigate this issue. 

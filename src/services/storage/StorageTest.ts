@@ -7,6 +7,8 @@ import { StorageModule } from './StorageModule';
 import { WorkflowStorage, Workflow } from './WorkflowStorage';
 import { AnnotationStorage, StepCategory } from './AnnotationStorage';
 import { PreferencesStorage } from './PreferencesStorage';
+import { CompressionTest } from './CompressionTest';
+import { CompressionService } from '../CompressionService';
 
 // Test basic StorageModule
 function testBaseStorageModule(): boolean {
@@ -301,6 +303,57 @@ function testMigration(): boolean {
   }
 }
 
+// Test compression functionality
+function testCompression(): boolean {
+  console.group('Testing Compression Functionality');
+  
+  try {
+    const compressionTest = new CompressionTest();
+    const results = compressionTest.runAllTests();
+    
+    // Check compression service tests
+    const serviceTests = results.compressionService;
+    const serviceTestsPassed = serviceTests.every(result => result === true);
+    console.log('Compression service tests:', serviceTestsPassed ? 'PASSED' : 'FAILED');
+    console.log('Basic compression/decompression test:', serviceTests[0]);
+    console.log('Compression marker test:', serviceTests[1] && serviceTests[2]);
+    console.log('Auto-compression threshold test:', serviceTests[3] && serviceTests[4]);
+    console.log('Size reduction test:', serviceTests[5]);
+    
+    // Check storage compression tests
+    const storageTests = results.storageCompression;
+    const storageTestsPassed = storageTests.every(result => result === true);
+    console.log('Storage compression tests:', storageTestsPassed ? 'PASSED' : 'FAILED');
+    console.log('Storage set with compression test:', storageTests[0]);
+    console.log('Compressed data retrieval test:', storageTests[1]);
+    console.log('Compressed vs uncompressed size test:', storageTests[2]);
+    
+    // Check workflow image compression tests
+    const imageTests = results.workflowImageCompression;
+    const imageTestsPassed = imageTests.every(result => result === true);
+    console.log('Workflow image compression tests:', imageTestsPassed ? 'PASSED' : 'FAILED');
+    console.log('Save workflow with image test:', imageTests[0]);
+    console.log('Retrieve workflow with decompressed image test:', imageTests[1] && imageTests[2]);
+    console.log('Storage optimization test:', imageTests[3]);
+    console.log('Storage size calculation test:', imageTests[4]);
+    
+    // Run a simple compression ratio test
+    const compressionService = new CompressionService();
+    const testData = 'a'.repeat(10000);
+    const ratio = compressionService.getCompressionRatio(testData);
+    console.log('Compression ratio for repeating data:', ratio.toFixed(2), '(lower is better)');
+    
+    console.log('Compression Tests ' + (serviceTestsPassed && storageTestsPassed && imageTestsPassed ? 'Passed!' : 'Failed!'));
+    console.groupEnd();
+    
+    return serviceTestsPassed && storageTestsPassed && imageTestsPassed;
+  } catch (error) {
+    console.error('Compression Tests Failed:', error);
+    console.groupEnd();
+    return false;
+  }
+}
+
 // Run all tests
 export function runStorageTests(): void {
   console.log('=== Storage Module Tests ===');
@@ -310,6 +363,7 @@ export function runStorageTests(): void {
   const annotationResult = testAnnotationStorage();
   const preferencesResult = testPreferencesStorage();
   const migrationResult = testMigration();
+  const compressionResult = testCompression();
   
   console.log('=== Test Results ===');
   console.log('Base Storage Module:', baseResult ? 'PASSED' : 'FAILED');
@@ -317,8 +371,9 @@ export function runStorageTests(): void {
   console.log('Annotation Storage:', annotationResult ? 'PASSED' : 'FAILED');
   console.log('Preferences Storage:', preferencesResult ? 'PASSED' : 'FAILED');
   console.log('Migration Test:', migrationResult ? 'PASSED' : 'FAILED');
+  console.log('Compression Test:', compressionResult ? 'PASSED' : 'FAILED');
   console.log('Overall Result:', 
-    (baseResult && workflowResult && annotationResult && preferencesResult && migrationResult) 
+    (baseResult && workflowResult && annotationResult && preferencesResult && migrationResult && compressionResult) 
       ? 'ALL TESTS PASSED' 
       : 'TESTS FAILED'
   );

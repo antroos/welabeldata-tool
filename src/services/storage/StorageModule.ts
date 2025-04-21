@@ -3,26 +3,35 @@
  * Provides common functionality for all storage modules
  */
 
+import { CompressionService } from '../CompressionService';
+
 export interface StorageOptions {
   namespace?: string;
   version?: number;
+  compressionThreshold?: number;
+  useCompression?: boolean;
 }
 
 export interface StoredData<T> {
   version: number;
   updatedAt: number;
   data: T;
+  compressed?: boolean;
 }
 
 export class StorageModule<T> {
   protected namespace: string;
   protected version: number;
   protected storageKey: string;
+  protected compressionService: CompressionService;
+  protected useCompression: boolean;
 
   constructor(key: string, options: StorageOptions = {}) {
     this.namespace = options.namespace || 'wld';
     this.version = options.version || 1;
     this.storageKey = `${this.namespace}_${key}`;
+    this.compressionService = new CompressionService(options.compressionThreshold);
+    this.useCompression = options.useCompression !== undefined ? options.useCompression : true;
   }
 
   /**
@@ -60,14 +69,16 @@ export class StorageModule<T> {
   }
 
   /**
-   * Retrieves data from localStorage
+   * Retrieves data from localStorage with automatic decompression if needed
    */
   get(): T | null {
     try {
       const rawData = localStorage.getItem(this.storageKey);
       if (!rawData) return null;
       
-      const storedData = JSON.parse(rawData) as StoredData<T>;
+      // Handle compressed data
+      const decompressedRawData = this.compressionService.autoDecompress(rawData);
+      const storedData = JSON.parse(decompressedRawData) as StoredData<T>;
       return this.unwrapData(storedData);
     } catch (error) {
       console.error(`Error retrieving data from ${this.storageKey}:`, error);
@@ -76,7 +87,7 @@ export class StorageModule<T> {
   }
 
   /**
-   * Stores data in localStorage
+   * Stores data in localStorage with automatic compression for large data
    */
   set(data: T): boolean {
     try {
@@ -86,10 +97,22 @@ export class StorageModule<T> {
       }
       
       const wrappedData = this.wrapData(data);
-      localStorage.setItem(this.storageKey, JSON.stringify(wrappedData));
+      const serializedData = JSON.stringify(wrappedData);
+      
+      // Apply compression if enabled and data is large
+      let finalData = serializedData;
+      if (this.useCompression) {
+        finalData = this.compressionService.autoCompress(serializedData);
+      }
+      
+      localStorage.setItem(this.storageKey, finalData);
       return true;
     } catch (error) {
-      console.error(`Error setting data for ${this.storageKey}:`, error);
+      if (error instanceof Error && error.name === 'QuotaExceededError') {
+        console.error(`Storage quota exceeded for ${this.storageKey}. Try enabling compression.`);
+      } else {
+        console.error(`Error setting data for ${this.storageKey}:`, error);
+      }
       return false;
     }
   }
@@ -124,11 +147,48 @@ export class StorageModule<T> {
       
       const backupKey = `${this.storageKey}_backup_${Date.now()}`;
       const backupData = this.wrapData(data);
-      localStorage.setItem(backupKey, JSON.stringify(backupData));
+      
+      let serializedData = JSON.stringify(backupData);
+      if (this.useCompression) {
+        serializedData = this.compressionService.autoCompress(serializedData);
+      }
+      
+      localStorage.setItem(backupKey, serializedData);
       return backupKey;
     } catch (error) {
       console.error(`Error creating backup for ${this.storageKey}:`, error);
       return null;
+    }
+  }
+
+  /**
+   * Enables or disables compression for this storage module
+   */
+  setCompression(enabled: boolean): void {
+    this.useCompression = enabled;
+  }
+
+  /**
+   * Sets the compression threshold in bytes
+   */
+  setCompressionThreshold(thresholdBytes: number): void {
+    this.compressionService.setThreshold(thresholdBytes);
+  }
+
+  /**
+   * Estimates the size of the current data in storage
+   * @returns The approximate size in bytes
+   */
+  getApproximateSize(): number {
+    try {
+      const rawData = localStorage.getItem(this.storageKey);
+      if (!rawData) return 0;
+      
+      // Each character is 2 bytes in UTF-16 encoding used by localStorage
+      return rawData.length * 2;
+    } catch (error) {
+      console.error(`Error calculating size for ${this.storageKey}:`, error);
+      return 0;
     }
   }
 } 
