@@ -23,6 +23,12 @@ export default function Home() {
         >
           Storage Test
         </Link>
+        <Link 
+          href="/storage-integration-test" 
+          className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600 shadow-md"
+        >
+          Integration Test
+        </Link>
       </div>
       <Chat />
     </div>

@@ -4,14 +4,8 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Timeline from '../../components/Timeline';
 import ImageUploader from '../../components/ImageUploader';
-import { 
-  Workflow, 
-  WorkflowStep, 
-  saveWorkflow, 
-  getWorkflowById, 
-  createNewWorkflow, 
-  exportWorkflow 
-} from '../../lib/storageService';
+import { useStorage } from '../../contexts/StorageContext';
+import { Workflow, WorkflowStep } from '../../services/storage/WorkflowStorage';
 import { 
   getPurposeSuggestion,
   getOutcomeSuggestion,
@@ -35,6 +29,7 @@ interface Step {
 }
 
 export default function WorkflowEditor() {
+  const { workflowStorage, isLoaded } = useStorage();
   const [workflow, setWorkflow] = useState<Workflow | null>(null);
   const [steps, setSteps] = useState<Step[]>([]);
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
@@ -53,13 +48,14 @@ export default function WorkflowEditor() {
   
   // Initialize with a new workflow on first load
   useEffect(() => {
-    // In a real app, we'd get the workflow ID from the URL
-    // For MVP we'll create a new workflow if none exists
+    // Wait for storage to be loaded
+    if (!isLoaded) return;
+    
     setIsLoading(true);
     
     try {
       // Create a sample workflow for testing
-      const newWorkflow = createNewWorkflow('UI Annotation Workflow');
+      const newWorkflow = workflowStorage.createNewWorkflow('UI Annotation Workflow');
       setWorkflow(newWorkflow);
       setSteps([]);
     } catch (error) {
@@ -67,11 +63,11 @@ export default function WorkflowEditor() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isLoaded, workflowStorage]);
   
   // Save workflow changes
   useEffect(() => {
-    if (workflow && !isLoading) {
+    if (workflow && !isLoading && isLoaded) {
       // Convert steps to WorkflowStep format
       const workflowSteps: WorkflowStep[] = steps.map(step => ({
         id: step.id,
@@ -94,9 +90,9 @@ export default function WorkflowEditor() {
         updatedAt: Date.now()
       };
       
-      saveWorkflow(updatedWorkflow);
+      workflowStorage.saveWorkflow(updatedWorkflow);
     }
-  }, [workflow, steps, isLoading]);
+  }, [workflow, steps, isLoading, isLoaded, workflowStorage]);
   
   const addStep = () => {
     const now = Date.now();
@@ -142,7 +138,15 @@ export default function WorkflowEditor() {
   
   const handleExport = () => {
     if (workflow) {
-      exportWorkflow(workflow.id);
+      const dataStr = JSON.stringify(workflow, null, 2);
+      const dataUri = `data:application/json;charset=utf-8,${encodeURIComponent(dataStr)}`;
+      
+      const exportFileName = `${workflow.title.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.json`;
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileName);
+      linkElement.click();
     }
   };
   
@@ -357,7 +361,7 @@ export default function WorkflowEditor() {
     return new File([u8arr], filename, { type: mime });
   };
   
-  if (isLoading) {
+  if (isLoading || !isLoaded) {
     return (
       <div className="min-h-screen bg-gray-50 text-gray-900 flex items-center justify-center">
         <div className="text-center">

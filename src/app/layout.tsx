@@ -1,6 +1,7 @@
 import './globals.css'
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { StorageProvider } from '../contexts/StorageContext'
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -20,9 +21,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
-        <main className="bg-gray-50 text-gray-900 min-h-screen">
-          {children}
-        </main>
+        <StorageProvider>
+          <main className="bg-gray-50 text-gray-900 min-h-screen">
+            {children}
+          </main>
+        </StorageProvider>
       </body>
     </html>
   )
